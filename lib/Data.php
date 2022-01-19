@@ -153,7 +153,7 @@ class Data {
 	 * @return array
 	 *
 	 */
-	public function get(GroupHelper $groupHelper, UserSettings $userSettings, $user, $since, $limit, $sort, $filter, $objectType = '', $objectId = 0, bool $returnEvents = false) {
+	public function get(GroupHelper $groupHelper, UserSettings $userSettings, $user, $since, $limit, $sort, $filter, $objectType = '', $objectId = 0, bool $returnEvents = false, bool $ignoreUser = false, $objectIds = '') {
 		// get current user
 		if ($user === '') {
 			throw new \OutOfBoundsException('Invalid user', 1);
@@ -170,7 +170,15 @@ class Data {
 		$query->select('*')
 			->from('activity');
 
-		$query->where($query->expr()->eq('affecteduser', $query->createNamedParameter($user)));
+		//20210810 G 增加忽略用户筛选功能
+		if ($ignoreUser){
+               		 $query->where($query->expr()->neq('affecteduser', $query->createNamedParameter(''))); 
+    		} 
+    		else {
+		 	 $query->where($query->expr()->eq('affecteduser', $query->createNamedParameter($user)));    
+    		}
+		
+		//$query->where($query->expr()->eq('affecteduser', $query->createNamedParameter($user)));
 
 		if ($activeFilter instanceof IFilter && !($activeFilter instanceof AllFilter)) {
 			$notificationTypes = $userSettings->getNotificationTypes();
@@ -186,7 +194,11 @@ class Data {
 			$query->andWhere($query->expr()->neq('user', $query->createNamedParameter($user)));
 		} elseif ($filter === 'filter') {
 			$query->andWhere($query->expr()->eq('object_type', $query->createNamedParameter($objectType)));
-			$query->andWhere($query->expr()->eq('object_id', $query->createNamedParameter($objectId)));
+        if ($objectIds !== '') {	
+  				$query->andWhere($query->expr()->in('object_id', $query->createNamedParameter(explode(',', $objectIds), IQueryBuilder::PARAM_INT_ARRAY)));
+  			} else if ($objectId !== 0) {
+  				$query->andWhere($query->expr()->eq('object_id', $query->createNamedParameter($objectId)));					
+  			}			
 		}
 
 		if ($activeFilter instanceof IFilter) {
@@ -212,7 +224,7 @@ class Data {
 		 * Order and specify the offset
 		 */
 		$sqlSort = ($sort === 'asc') ? 'ASC' : 'DESC';
-		$headers = $this->setOffsetFromSince($query, $user, $since, $sqlSort);
+		$headers = $this->setOffsetFromSince($query, $user, $since, $sqlSort, $ignoreUser);
 		$query->orderBy('timestamp', $sqlSort)
 			->addOrderBy('activity_id', $sqlSort);
 
@@ -248,7 +260,7 @@ class Data {
 	 *
 	 * @throws \OutOfBoundsException If $since is not owned by $user
 	 */
-	protected function setOffsetFromSince(IQueryBuilder $query, $user, $since, $sort) {
+	protected function setOffsetFromSince(IQueryBuilder $query, $user, $since, $sort, $ignoreUser) {
 		if ($since) {
 			$queryBuilder = $this->connection->getQueryBuilder();
 			$queryBuilder->select(['affecteduser', 'timestamp'])
@@ -259,7 +271,7 @@ class Data {
 			$result->closeCursor();
 
 			if ($activity) {
-				if ($activity['affecteduser'] !== $user) {
+				if ($activity['affecteduser'] !== $user && !$ignoreUser) {
 					throw new \OutOfBoundsException('Invalid since', 2);
 				}
 				$timestamp = (int)$activity['timestamp'];

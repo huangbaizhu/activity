@@ -64,6 +64,9 @@ class APIv2Controller extends OCSController {
 	protected $objectId;
 
 	/** @var string */
+	protected $objectIds;
+
+	/** @var string */
 	protected $user;
 
 	/** @var bool */
@@ -151,7 +154,7 @@ class APIv2Controller extends OCSController {
 	 * @throws InvalidFilterException when the filter is invalid
 	 * @throws \OutOfBoundsException when no user is given
 	 */
-	protected function validateParameters($filter, $since, $limit, $previews, $objectType, $objectId, $sort) {
+	protected function validateParameters($filter, $since, $limit, $previews, $objectType, $objectId, $sort, $objectIds) {
 		$this->filter = \is_string($filter) ? $filter : 'all';
 		if ($this->filter !== $this->data->validateFilter($this->filter)) {
 			throw new InvalidFilterException('Invalid filter');
@@ -161,12 +164,13 @@ class APIv2Controller extends OCSController {
 		$this->loadPreviews = (bool) $previews;
 		$this->objectType = (string) $objectType;
 		$this->objectId = (int) $objectId;
+		$this->objectIds = (string) $objectIds;
 		$this->sort = \in_array($sort, ['asc', 'desc'], true) ? $sort : 'desc';
-
-		if (($this->objectType !== '' && $this->objectId === 0) || ($this->objectType === '' && $this->objectId !== 0)) {
+    	if (($this->objectType !== '' && $this->objectId === 0 && $this->objectIds === '' && $this->limit > 1000) || ($this->objectType === '' && ($this->objectId !== 0 || $this->objectIds !== ''))) {
 			// Only allowed together
 			$this->objectType = '';
 			$this->objectId = 0;
+			$this->objectIds = '';
 		}
 
 		$user = $this->userSession->getUser();
@@ -203,10 +207,11 @@ class APIv2Controller extends OCSController {
 	 * @param string $object_type
 	 * @param int $object_id
 	 * @param string $sort
+	 * @param bool $ignore_user
 	 * @return DataResponse
 	 */
-	public function getFilter($filter, $since = 0, $limit = 50, $previews = false, $object_type = '', $object_id = 0, $sort = 'desc'): DataResponse {
-		return $this->get($filter, $since, $limit, $previews, $object_type, $object_id, $sort);
+	public function getFilter($filter, $since = 0, $limit = 50, $previews = false, $object_type = '', $object_id = 0, $sort = 'desc', $ignore_user = false, $object_ids = ''): DataResponse {
+		return $this->get($filter, $since, $limit, $previews, $object_type, $object_id, $sort, $ignore_user, $object_ids);
 	}
 
 	/**
@@ -248,9 +253,9 @@ class APIv2Controller extends OCSController {
 	 * @param string $sort
 	 * @return DataResponse
 	 */
-	protected function get($filter, $since, $limit, $previews, $filterObjectType, $filterObjectId, $sort): DataResponse {
+	protected function get($filter, $since, $limit, $previews, $filterObjectType, $filterObjectId, $sort, $ignoreUser, $object_ids): DataResponse {
 		try {
-			$this->validateParameters($filter, $since, $limit, $previews, $filterObjectType, $filterObjectId, $sort);
+			$this->validateParameters($filter, $since, $limit, $previews, $filterObjectType, $filterObjectId, $sort, $object_ids);
 		} catch (InvalidFilterException $e) {
 			return new DataResponse([], Http::STATUS_NOT_FOUND);
 		} catch (\OutOfBoundsException $e) {
@@ -270,7 +275,10 @@ class APIv2Controller extends OCSController {
 
 				$this->filter,
 				$this->objectType,
-				$this->objectId
+				$this->objectId,
+				false,
+				$ignoreUser,
+				$this->objectIds
 			);
 		} catch (\OutOfBoundsException $e) {
 			// Invalid since argument
